@@ -1,0 +1,25 @@
+# This file is NOT loaded automatically (note the .example suffix) because
+# of a chicken-and-egg problem: Terraform needs the S3 bucket and DynamoDB
+# table to already exist before `terraform init` can use them as a backend.
+#
+# Steps:
+#   1. Run scripts/bootstrap-backend.sh once, to create the bucket and table
+#      with plain local state (or manually via the AWS CLI).
+#   2. Copy this file to backend.tf, filling in the bucket name printed by
+#      the bootstrap script (bucket names must be globally unique).
+#   3. Run `terraform init` again — Terraform will offer to migrate your
+#      existing local state into S3. Say yes.
+#
+# Not used at all on the LocalStack path: local state is simpler there,
+# and LocalStack's DynamoDB/S3 state resets whenever the container restarts
+# anyway, so a remote backend buys nothing for that workflow.
+
+terraform {
+  backend "s3" {
+    bucket         = "CHANGE-ME-tfstate-bucket"
+    key            = "project08/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "CHANGE-ME-tfstate-lock"
+    encrypt        = true
+  }
+}
