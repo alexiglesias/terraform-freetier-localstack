@@ -16,6 +16,7 @@ fi
 
 cd "$(dirname "$0")/.."
 ENV_DIR="envs/${TARGET}"
+INIT_ARGS=()
 
 if [ "${TARGET}" = "aws" ]; then
   if [ ! -f "${ENV_DIR}/terraform.tfvars" ]; then
@@ -23,6 +24,11 @@ if [ "${TARGET}" = "aws" ]; then
     echo "[ERROR] cp ${ENV_DIR}/terraform.tfvars.example ${ENV_DIR}/terraform.tfvars and fill it in." >&2
     exit 1
   fi
+  if [ ! -f "${ENV_DIR}/backend.hcl" ]; then
+    echo "[ERROR] ${ENV_DIR}/backend.hcl not found - run the bootstrap first (see README)." >&2
+    exit 1
+  fi
+  INIT_ARGS=(-backend-config=backend.hcl)
   echo "[INFO] Deploying against REAL AWS. This can incur cost."
   read -r -p "Type 'yes' to continue: " CONFIRM
   if [ "${CONFIRM}" != "yes" ]; then
@@ -34,7 +40,7 @@ else
   ./scripts/localstack-up.sh
 fi
 
-terraform -chdir="${ENV_DIR}" init
+terraform -chdir="${ENV_DIR}" init ${INIT_ARGS[@]+"${INIT_ARGS[@]}"}
 terraform -chdir="${ENV_DIR}" plan -out=tfplan
 terraform -chdir="${ENV_DIR}" apply tfplan
 
