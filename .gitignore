@@ -22,3 +22,6 @@ terraform.tfvars
 # OS / editor noise
 .DS_Store
 .vscode/
+
+# Lock files belong to root configurations (envs/*), not reusable modules
+modules/**/.terraform.lock.hcl

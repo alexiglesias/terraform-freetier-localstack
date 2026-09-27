@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Deploys this project against either real AWS or LocalStack.
+# Deploys one environment: envs/aws (real AWS) or envs/localstack.
+# Each environment is its own Terraform root with its own state.
 #
 # Usage:
 #   ./scripts/deploy.sh aws
@@ -14,31 +15,32 @@ if [ "${TARGET}" != "aws" ] && [ "${TARGET}" != "localstack" ]; then
 fi
 
 cd "$(dirname "$0")/.."
+ENV_DIR="envs/${TARGET}"
 
 if [ "${TARGET}" = "aws" ]; then
+  if [ ! -f "${ENV_DIR}/terraform.tfvars" ]; then
+    echo "[ERROR] ${ENV_DIR}/terraform.tfvars not found." >&2
+    echo "[ERROR] cp ${ENV_DIR}/terraform.tfvars.example ${ENV_DIR}/terraform.tfvars and fill it in." >&2
+    exit 1
+  fi
   if [ -z "${TF_VAR_db_password:-}" ]; then
     echo "[ERROR] TF_VAR_db_password is not set." >&2
     echo "[ERROR] export TF_VAR_db_password='something-strong' before deploying to AWS." >&2
     exit 1
   fi
-  echo "[INFO] Deploying against REAL AWS. This can incur cost if you exceed"
-  echo "[INFO] Free Tier limits or leave resources running. Double-check"
-  echo "[INFO] environments/aws.tfvars (region, allowed_ssh_cidr, budget_alert_email)"
-  echo "[INFO] before continuing."
+  echo "[INFO] Deploying against REAL AWS. This can incur cost."
   read -r -p "Type 'yes' to continue: " CONFIRM
   if [ "${CONFIRM}" != "yes" ]; then
     echo "Aborted."
     exit 1
   fi
-  terraform init
-  terraform plan -var-file=environments/aws.tfvars -out=tfplan
-  terraform apply tfplan
 else
   echo "[INFO] Deploying against LocalStack (http://localhost:4566)"
   ./scripts/localstack-up.sh
-  terraform init
-  terraform plan -var-file=environments/localstack.tfvars -out=tfplan
-  terraform apply tfplan
 fi
 
-echo "[DONE] Apply complete. Run 'terraform output' to see the results."
+terraform -chdir="${ENV_DIR}" init
+terraform -chdir="${ENV_DIR}" plan -out=tfplan
+terraform -chdir="${ENV_DIR}" apply tfplan
+
+echo "[DONE] Apply complete. Run 'terraform -chdir=${ENV_DIR} output' to see the results."
