@@ -20,9 +20,20 @@ variable "ami_id" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type."
+  description = "EC2 instance type (x86_64). t3.micro is Free Tier eligible for both old and new (post July 2025) AWS accounts."
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
+}
+
+variable "root_volume_size" {
+  description = "Root disk size in GB (gp3, encrypted). Ubuntu needs at least 8."
+  type        = number
+  default     = 8
+
+  validation {
+    condition     = var.root_volume_size >= 8 && var.root_volume_size <= 30
+    error_message = "root_volume_size must be between 8 and 30 GB (30 GB is the Free Tier EBS limit)."
+  }
 }
 
 variable "allowed_ssh_cidr" {

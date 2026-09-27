@@ -26,9 +26,9 @@ variable "az_count" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type."
+  description = "EC2 instance type. t3.micro is Free Tier eligible on old and new AWS accounts; t2.micro is NOT for accounts created after 15 July 2025."
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
 
 variable "allowed_ssh_cidr" {
