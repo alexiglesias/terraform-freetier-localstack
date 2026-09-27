@@ -18,6 +18,12 @@ variable "allowed_security_group_id" {
   type        = string
 }
 
+variable "engine_version" {
+  description = "MySQL major version. 8.0 left RDS standard support on 31 Jul 2026 and would incur paid Extended Support."
+  type        = string
+  default     = "8.4"
+}
+
 variable "instance_class" {
   description = "RDS instance class."
   type        = string
@@ -25,7 +31,7 @@ variable "instance_class" {
 }
 
 variable "allocated_storage" {
-  description = "Allocated storage in GB."
+  description = "Allocated storage in GB (gp3 minimum for MySQL is 20)."
   type        = number
   default     = 20
 }
@@ -40,10 +46,4 @@ variable "username" {
   description = "Master username."
   type        = string
   default     = "labadmin"
-}
-
-variable "password" {
-  description = "Master password."
-  type        = string
-  sensitive   = true
 }

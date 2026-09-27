@@ -17,11 +17,6 @@ fi
 cd "$(dirname "$0")/.."
 ENV_DIR="envs/${TARGET}"
 
-if [ "${TARGET}" = "aws" ] && [ -z "${TF_VAR_db_password:-}" ]; then
-  echo "[ERROR] TF_VAR_db_password is not set (Terraform needs it to compute the plan, even for destroy)." >&2
-  exit 1
-fi
-
 echo "[INFO] About to DESTROY every resource in ${ENV_DIR}"
 terraform -chdir="${ENV_DIR}" plan -destroy
 

@@ -23,11 +23,6 @@ if [ "${TARGET}" = "aws" ]; then
     echo "[ERROR] cp ${ENV_DIR}/terraform.tfvars.example ${ENV_DIR}/terraform.tfvars and fill it in." >&2
     exit 1
   fi
-  if [ -z "${TF_VAR_db_password:-}" ]; then
-    echo "[ERROR] TF_VAR_db_password is not set." >&2
-    echo "[ERROR] export TF_VAR_db_password='something-strong' before deploying to AWS." >&2
-    exit 1
-  fi
   echo "[INFO] Deploying against REAL AWS. This can incur cost."
   read -r -p "Type 'yes' to continue: " CONFIRM
   if [ "${CONFIRM}" != "yes" ]; then
