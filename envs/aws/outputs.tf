@@ -9,18 +9,23 @@ output "ec2_instance_id" {
 }
 
 output "ec2_public_ip" {
-  description = "Public IP of the EC2 instance (SSH)."
+  description = "Public IP of the EC2 instance."
   value       = module.compute.public_ip
 }
 
-output "ssh_command" {
-  description = "Ready-to-paste SSH command."
-  value       = "ssh -i ${module.compute.private_key_path} ubuntu@${module.compute.public_ip}"
+output "web_url" {
+  description = "Where to open the site: through the ALB if there is one, otherwise the instance directly."
+  value       = var.create_alb ? "http://${module.alb[0].dns_name}" : "http://${module.compute.public_ip}"
 }
 
-output "alb_url" {
-  description = "URL of the web app through the ALB (null when create_alb = false)."
-  value       = var.create_alb ? "http://${module.alb[0].dns_name}" : null
+output "ssm_command" {
+  description = "Open a shell on the instance without SSH (needs the AWS CLI Session Manager plugin)."
+  value       = var.enable_ssm ? "aws ssm start-session --region ${var.aws_region} --target ${module.compute.instance_id}" : null
+}
+
+output "ssh_command" {
+  description = "SSH command (null when SSH is disabled)."
+  value       = var.allowed_ssh_cidr != null ? "ssh -i ${module.compute.private_key_path} ubuntu@${module.compute.public_ip}" : null
 }
 
 output "rds_endpoint" {

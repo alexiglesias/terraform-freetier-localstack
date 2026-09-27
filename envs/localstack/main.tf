@@ -32,5 +32,6 @@ module "compute" {
   ami_id           = data.aws_ami.ubuntu.id
   instance_type    = var.instance_type
   allowed_ssh_cidr = var.allowed_ssh_cidr
+  enable_ssm       = false # SSM Session Manager is not in the LocalStack Hobby plan
   private_key_path = "${path.root}/${var.project_name}.pem"
 }

@@ -43,8 +43,15 @@ variable "instance_type" {
 }
 
 variable "allowed_ssh_cidr" {
-  description = "CIDR allowed to SSH to the instance. Your own IP as x.x.x.x/32."
+  description = "Your IP as x.x.x.x/32 to enable SSH. Leave null (default) for no SSH - connect with SSM Session Manager instead."
   type        = string
+  default     = null
+}
+
+variable "enable_ssm" {
+  description = "Allow shell access through SSM Session Manager (recommended over SSH)."
+  type        = bool
+  default     = true
 }
 
 # ---------------------------------------------------------------------------
