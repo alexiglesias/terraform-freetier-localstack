@@ -80,12 +80,6 @@ variable "db_instance_class" {
   default     = "db.t3.micro"
 }
 
-variable "db_password" {
-  description = "RDS master password. Pass via TF_VAR_db_password, never commit it."
-  type        = string
-  sensitive   = true
-}
-
 # ---------------------------------------------------------------------------
 # Budget alert
 # ---------------------------------------------------------------------------

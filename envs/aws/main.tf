@@ -43,5 +43,4 @@ module "database" {
   subnet_ids                = module.network.private_subnet_ids
   allowed_security_group_id = module.compute.security_group_id
   instance_class            = var.db_instance_class
-  password                  = var.db_password
 }

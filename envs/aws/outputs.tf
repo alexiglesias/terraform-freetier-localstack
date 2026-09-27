@@ -32,3 +32,8 @@ output "rds_endpoint" {
   description = "RDS endpoint (null when create_rds = false)."
   value       = var.create_rds ? module.database[0].endpoint : null
 }
+
+output "rds_password_command" {
+  description = "Fetch the RDS master credentials from Secrets Manager (null when create_rds = false)."
+  value       = var.create_rds ? "aws secretsmanager get-secret-value --region ${var.aws_region} --secret-id '${module.database[0].master_user_secret_arn}' --query SecretString --output text" : null
+}
