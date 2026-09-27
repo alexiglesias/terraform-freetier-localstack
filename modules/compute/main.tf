@@ -6,7 +6,8 @@ locals {
 # AMI
 # ---------------------------------------------------------------------------
 
-# Only looked up when no ami_id is passed in.
+# Latest official Ubuntu 24.04 LTS (Noble) for x86_64 - only looked up when
+# no ami_id is passed in. Canonical publishes Noble under "hvm-ssd-gp3".
 data "aws_ami" "ubuntu" {
   count = var.ami_id == null ? 1 : 0
 
@@ -15,7 +16,12 @@ data "aws_ami" "ubuntu" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
   }
 
   filter {
@@ -158,6 +164,28 @@ resource "aws_instance" "this" {
   key_name               = local.ssh_enabled ? aws_key_pair.this[0].key_name : null
   iam_instance_profile   = var.enable_ssm ? aws_iam_instance_profile.ssm[0].name : null
   vpc_security_group_ids = [aws_security_group.this.id]
+
+  # IMDSv2 only: the metadata service (which hands out the instance's IAM
+  # credentials) requires a session token, which blocks the classic SSRF
+  # trick of making the app fetch http://169.254.169.254/... for an attacker.
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
+  # Encrypted gp3 root disk. Encryption with the AWS-managed key is free;
+  # 30 GB of EBS is inside the Free Tier.
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = var.root_volume_size
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  # user_data only runs on first boot, so a change to it should rebuild the
+  # instance instead of silently doing nothing.
+  user_data_replace_on_change = true
 
   user_data = <<-EOT
     #!/bin/bash
