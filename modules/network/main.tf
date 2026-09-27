@@ -123,3 +123,16 @@ resource "aws_route_table_association" "private" {
   subnet_id      = each.value.id
   route_table_id = aws_route_table.private.id
 }
+
+
+# ---------------------------------------------------------------------------
+# Every VPC comes with a "default" security group that allows all traffic
+# between its members. Nothing here uses it, so take it over and strip all
+# its rules - anything accidentally launched with it gets no access at all.
+# ---------------------------------------------------------------------------
+
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+
+  tags = { Name = "${var.name}-default-sg-unused" }
+}

@@ -15,7 +15,12 @@ module "compute" {
   subnet_id        = module.network.public_subnet_ids[0]
   instance_type    = var.instance_type
   allowed_ssh_cidr = var.allowed_ssh_cidr
+  enable_ssm       = var.enable_ssm
   private_key_path = "${path.root}/${var.project_name}.pem"
+
+  # With an ALB, only the ALB may reach port 80 (the alb module adds that
+  # rule). Without one, open port 80 so the site is still reachable.
+  public_http_cidrs = var.create_alb ? [] : ["0.0.0.0/0"]
 }
 
 module "alb" {

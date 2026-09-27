@@ -26,11 +26,35 @@ variable "instance_type" {
 }
 
 variable "allowed_ssh_cidr" {
-  description = "CIDR allowed to reach the instance on port 22."
+  description = "CIDR allowed to SSH on port 22, e.g. your IP as x.x.x.x/32. null = no SSH at all (no port 22 rule, no key pair) - use SSM Session Manager instead."
   type        = string
+  default     = null
+
+  validation {
+    condition     = var.allowed_ssh_cidr == null || can(cidrhost(var.allowed_ssh_cidr, 0))
+    error_message = "allowed_ssh_cidr must be null or a valid IPv4 CIDR, e.g. 203.0.113.10/32."
+  }
+
+  validation {
+    condition     = var.allowed_ssh_cidr == null || try(tonumber(split("/", var.allowed_ssh_cidr)[1]) >= 16, false)
+    error_message = "allowed_ssh_cidr is too broad: SSH must be limited to a /16 or smaller (ideally your own IP as /32). Never 0.0.0.0/0."
+  }
+}
+
+variable "enable_ssm" {
+  description = "Attach an IAM role that lets you open a shell with AWS SSM Session Manager (no open port, no SSH key needed)."
+  type        = bool
+  default     = true
+}
+
+variable "public_http_cidrs" {
+  description = "CIDRs allowed to reach the instance directly on port 80. Leave empty when an ALB sits in front (the ALB module adds its own rule)."
+  type        = list(string)
+  default     = []
 }
 
 variable "private_key_path" {
-  description = "Where to write the generated SSH private key on the machine running Terraform."
+  description = "Where to write the generated SSH private key. Only used when allowed_ssh_cidr is set."
   type        = string
+  default     = null
 }

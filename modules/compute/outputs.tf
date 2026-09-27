@@ -14,6 +14,6 @@ output "security_group_id" {
 }
 
 output "private_key_path" {
-  description = "Path to the generated SSH private key."
-  value       = local_sensitive_file.private_key.filename
+  description = "Path to the generated SSH private key (null when SSH is disabled)."
+  value       = one(local_sensitive_file.private_key[*].filename)
 }
