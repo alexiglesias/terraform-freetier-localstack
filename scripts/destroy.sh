@@ -17,6 +17,12 @@ fi
 cd "$(dirname "$0")/.."
 ENV_DIR="envs/${TARGET}"
 
+INIT_ARGS=()
+if [ "${TARGET}" = "aws" ]; then
+  INIT_ARGS=(-backend-config=backend.hcl)
+fi
+terraform -chdir="${ENV_DIR}" init ${INIT_ARGS[@]+"${INIT_ARGS[@]}"}
+
 echo "[INFO] About to DESTROY every resource in ${ENV_DIR}"
 terraform -chdir="${ENV_DIR}" plan -destroy
 
@@ -33,7 +39,8 @@ if [ "${TARGET}" = "aws" ]; then
 
 [DONE] terraform destroy complete.
 
-Not removed by destroy (on purpose): the S3 bucket / DynamoDB table used as
-the remote state backend. Check the AWS Billing console to confirm spend.
+Not removed (on purpose): bootstrap/ - the state bucket and the budget
+alert. They cost ~nothing and the budget keeps watching for leftovers.
+Check the AWS Billing console to confirm spend.
 MSG
 fi

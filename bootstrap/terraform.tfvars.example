@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in:
+#   cp terraform.tfvars.example terraform.tfvars
+
+aws_account_id     = "123456789012" # aws sts get-caller-identity --query Account --output text
+budget_alert_email = "you@example.com"
+
+# aws_region       = "us-east-1"
+# budget_limit_usd = 5

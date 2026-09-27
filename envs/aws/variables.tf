@@ -4,6 +4,16 @@ variable "project_name" {
   default     = "tf-freetier-lab"
 }
 
+variable "aws_account_id" {
+  description = "The only AWS account this configuration may touch (12 digits)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "aws_account_id must be exactly 12 digits."
+  }
+}
+
 variable "aws_region" {
   description = "AWS region to deploy into. AZs are looked up automatically."
   type        = string
@@ -80,18 +90,3 @@ variable "db_instance_class" {
   default     = "db.t3.micro"
 }
 
-# ---------------------------------------------------------------------------
-# Budget alert
-# ---------------------------------------------------------------------------
-
-variable "budget_limit_usd" {
-  description = "Monthly budget in USD that triggers the alert."
-  type        = number
-  default     = 1
-}
-
-variable "budget_alert_email" {
-  description = "Email that receives budget alerts."
-  type        = string
-  default     = ""
-}
