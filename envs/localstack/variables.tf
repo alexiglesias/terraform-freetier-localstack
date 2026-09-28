@@ -7,6 +7,17 @@ variable "project_name" {
   default     = "tf-freetier-lab-local"
 }
 
+variable "localstack_endpoint" {
+  description = "URL of the LocalStack gateway. Override when LocalStack runs elsewhere (e.g. another host in CI)."
+  type        = string
+  default     = "http://localhost:4566"
+
+  validation {
+    condition     = can(regex("^https?://", var.localstack_endpoint))
+    error_message = "localstack_endpoint must start with http:// or https://."
+  }
+}
+
 variable "aws_region" {
   description = "Region LocalStack simulates."
   type        = string

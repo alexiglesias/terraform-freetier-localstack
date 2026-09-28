@@ -1,4 +1,4 @@
-# Every API call goes to LocalStack on localhost:4566, never to real AWS.
+# Every API call goes to LocalStack (var.localstack_endpoint), never to real AWS.
 # The dummy credentials stop the provider from picking up your real
 # ~/.aws/credentials by accident.
 
@@ -12,11 +12,10 @@ provider "aws" {
   skip_requesting_account_id  = true
 
   endpoints {
-    ec2 = "http://localhost:4566"
-    iam = "http://localhost:4566"
-    sts = "http://localhost:4566"
+    ec2 = var.localstack_endpoint
+    iam = var.localstack_endpoint
+    sts = var.localstack_endpoint
   }
-
   default_tags {
     tags = {
       Project   = var.project_name
