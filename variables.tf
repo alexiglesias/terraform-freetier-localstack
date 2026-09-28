@@ -1,0 +1,49 @@
+# Everything has a default: nothing here is personal or secret, so the
+# LocalStack environment runs with a plain `terraform apply`.
+
+variable "project_name" {
+  description = "Short name used to prefix and tag every resource."
+  type        = string
+  default     = "tf-freetier-lab-local"
+}
+
+variable "localstack_endpoint" {
+  description = "URL of the LocalStack gateway. Override when LocalStack runs elsewhere (e.g. another host in CI)."
+  type        = string
+  default     = "http://localhost:4566"
+
+  validation {
+    condition     = can(regex("^https?://", var.localstack_endpoint))
+    error_message = "localstack_endpoint must start with http:// or https://."
+  }
+}
+
+variable "aws_region" {
+  description = "Region LocalStack simulates."
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC."
+  type        = string
+  default     = "10.20.0.0/16"
+}
+
+variable "az_count" {
+  description = "Number of AZs to spread subnets across."
+  type        = number
+  default     = 2
+}
+
+variable "instance_type" {
+  description = "EC2 instance type. t3.micro is Free Tier eligible on old and new AWS accounts; t2.micro is NOT for accounts created after 15 July 2025."
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "allowed_ssh_cidr" {
+  description = "CIDR allowed to SSH. Nothing is reachable on LocalStack anyway."
+  type        = string
+  default     = "127.0.0.1/32"
+}
