@@ -158,12 +158,14 @@ resource "aws_vpc_security_group_egress_rule" "all" {
 # ---------------------------------------------------------------------------
 
 resource "aws_instance" "this" {
+  # checkov:skip=CKV_AWS_126:Detailed (1-minute) monitoring is billed; basic 5-minute metrics are enough here.
   ami                    = local.ami_id
   instance_type          = var.instance_type
   subnet_id              = var.subnet_id
   key_name               = local.ssh_enabled ? aws_key_pair.this[0].key_name : null
   iam_instance_profile   = var.enable_ssm ? aws_iam_instance_profile.ssm[0].name : null
   vpc_security_group_ids = [aws_security_group.this.id]
+  ebs_optimized          = true # free on t3 (on by default); stated explicitly
 
   # IMDSv2 only: the metadata service (which hands out the instance's IAM
   # credentials) requires a session token, which blocks the classic SSRF

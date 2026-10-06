@@ -9,6 +9,10 @@ locals {
 }
 
 resource "aws_s3_bucket" "state" {
+  # checkov:skip=CKV_AWS_18:Access logging needs a second bucket; versioning already records every state change.
+  # checkov:skip=CKV_AWS_144:Cross-region replication doubles storage cost; overkill for one person's lab state.
+  # checkov:skip=CKV_AWS_145:SSE-S3 (AES256) is used; a customer-managed KMS key costs $1/month for no real gain here.
+  # checkov:skip=CKV2_AWS_62:Nothing consumes S3 events for a state bucket.
   bucket = local.state_bucket_name
 
   # State is the one thing you never want to lose by accident.

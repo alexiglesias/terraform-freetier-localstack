@@ -6,6 +6,7 @@
 # without an owner is unsafe on real AWS (anyone can publish an AMI called
 # "ubuntu"), which is why the provider makes us opt in - fine on an emulator.
 data "aws_ami" "ubuntu" {
+  # checkov:skip=CKV_AWS_386:LocalStack-only lookup - an emulator has no third-party AMIs (see comment above).
   most_recent         = true
   allow_unsafe_filter = true
 

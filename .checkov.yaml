@@ -1,0 +1,18 @@
+# checkov: static security scan for the Terraform code (and leaked secrets).
+#   checkov --config-file .checkov.yaml
+#
+# Every accepted finding is skipped *inline*, next to the resource, with the
+# reason - e.g.  # checkov:skip=CKV_AWS_157:Multi-AZ doubles the cost ...
+# so nothing is hidden in a global ignore list.
+directory:
+  - .
+framework:
+  - terraform
+  - secrets
+skip-path:
+  - \.terraform/
+  - \.env$
+  - terraform\.tfstate
+skip-download: true
+compact: true
+quiet: true

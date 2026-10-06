@@ -25,6 +25,11 @@ resource "aws_vpc_security_group_ingress_rule" "mysql_from_app" {
 }
 
 resource "aws_db_instance" "this" {
+  # checkov:skip=CKV_AWS_157:Multi-AZ doubles the cost; single-AZ is fine for a lab.
+  # checkov:skip=CKV_AWS_118:Enhanced monitoring is billed via CloudWatch; basic metrics are enough here.
+  # checkov:skip=CKV_AWS_129:Log exports create never-expiring CloudWatch log groups; not worth it for a lab DB.
+  # checkov:skip=CKV_AWS_133:Backups disabled on purpose - the lab DB holds no data worth keeping.
+  # checkov:skip=CKV_AWS_293:Deletion protection would block `make destroy`, which runs after every session.
   identifier     = "${var.name}-db"
   engine         = "mysql"
   engine_version = var.engine_version
@@ -46,6 +51,9 @@ resource "aws_db_instance" "this" {
   # RDS generates the master password and keeps it in Secrets Manager.
   # It never appears in Terraform code, variables or state.
   manage_master_user_password = true
+
+  # Allow login with short-lived IAM tokens instead of passwords. Free.
+  iam_database_authentication_enabled = true
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.this.id]

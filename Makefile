@@ -10,7 +10,7 @@ TF  := scripts/tf.sh
 ROOTS := bootstrap envs/aws envs/localstack
 
 .DEFAULT_GOAL := help
-.PHONY: help up down plan apply destroy output fmt check cleanup
+.PHONY: help up down plan apply destroy output fmt check lint security test ci cleanup
 
 help: ## Show this help
 	@echo "Usage: make <target> [ENV=localstack|aws]   (default ENV=$(ENV))"
@@ -46,6 +46,22 @@ check: ## fmt check + validate every root (offline, no cloud access)
 	  terraform -chdir=$$d init -backend=false -input=false >/dev/null && \
 	  terraform -chdir=$$d validate || exit 1; \
 	done
+
+lint: ## tflint, incl. AWS rules, on every root and module
+	tflint --init
+	tflint --recursive
+
+security: ## checkov security + leaked-secrets scan
+	checkov --config-file .checkov.yaml
+
+test: ## Unit tests for every module (mock providers - offline, free)
+	@for m in modules/*/; do \
+	  echo "== $$m"; \
+	  terraform -chdir=$$m init -backend=false -input=false >/dev/null && \
+	  terraform -chdir=$$m test || exit 1; \
+	done
+
+ci: check lint security test ## Everything CI runs, in order
 
 cleanup: ## EMERGENCY: remove everything billable this project left in AWS
 	@scripts/cleanup-aws.sh
