@@ -1,0 +1,150 @@
+# CI: runs on every pull request and on every push to main.
+#
+#   1. static     - fmt, validate, tflint, unit tests (mock providers),
+#                   checkov security scan, shellcheck. No cloud, no secrets.
+#   2. localstack - real `terraform apply` + `destroy` of envs/localstack
+#                   against LocalStack. Runs only when the
+#                   LOCALSTACK_AUTH_TOKEN repository secret exists.
+#
+# Real AWS is never touched from CI, so CI costs $0.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to the same PR/branch cancels the run that is still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TFLINT_VERSION: v0.64.0
+  CHECKOV_VERSION: "3.3.24"
+
+jobs:
+  static:
+    name: Lint, security & unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      has_localstack_token: ${{ steps.token.outputs.present }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read pinned Terraform version
+        id: tfver
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ steps.tfver.outputs.version }}
+          terraform_wrapper: false
+
+      - uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+
+      - name: Cache Terraform providers and tflint plugins
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            ~/.tflint.d/plugins
+          key: tf-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl', '.tflint.hcl') }}
+
+      # One shared provider download for every root/module (outside the repo,
+      # so scanners never see it).
+      - name: Enable Terraform plugin cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Format + validate
+        run: make check
+
+      - name: tflint
+        run: make lint
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # avoids GitHub API rate limits for tflint --init
+
+      - name: Unit tests (mock providers)
+        run: make test
+
+      - name: Install checkov
+        run: pipx install "checkov==${CHECKOV_VERSION}"
+
+      - name: Security scan
+        run: make security
+
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+      # Secrets can't be used in job-level `if:`, so expose "is it set?" here.
+      - name: Check for LocalStack token
+        id: token
+        run: echo "present=${{ secrets.LOCALSTACK_AUTH_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+  localstack:
+    name: Deploy + destroy on LocalStack
+    needs: static
+    if: needs.static.outputs.has_localstack_token == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+      CI: "true" # scripts/tf.sh auto-approves in CI
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read pinned Terraform version
+        id: tfver
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ steps.tfver.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Cache Terraform providers
+        uses: actions/cache@v6
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: tf-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl', '.tflint.hcl') }}
+
+      # One shared provider download for every root/module (outside the repo,
+      # so scanners never see it).
+      - name: Enable Terraform plugin cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Start LocalStack (pinned image from docker-compose.yml)
+        run: docker compose up -d --wait
+
+      - name: terraform apply
+        run: make apply ENV=localstack
+
+      - name: Outputs
+        run: make output ENV=localstack
+
+      - name: Second apply must be a no-op (idempotency)
+        run: make apply ENV=localstack
+
+      - name: terraform destroy
+        run: make destroy ENV=localstack
+
+      - name: LocalStack logs (on failure)
+        if: failure()
+        run: docker compose logs --tail=200 localstack
+
+      - name: Stop LocalStack
+        if: always()
+        run: docker compose down

@@ -1,0 +1,19 @@
+# Dependabot opens PRs when newer versions are released, and CI tests them
+# before you merge. Free on GitHub.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: terraform
+    directories:
+      - /bootstrap
+      - /envs/aws
+      - /envs/localstack
+    schedule:
+      interval: weekly
+    groups:
+      terraform-providers:
+        patterns: ["*"]
