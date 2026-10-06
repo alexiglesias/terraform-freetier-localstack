@@ -10,5 +10,5 @@ output "security_group_id" {
 
 output "master_user_secret_arn" {
   description = "ARN of the Secrets Manager secret holding the master username and password."
-  value       = aws_db_instance.this.master_user_secret[0].secret_arn
+  value       = try(aws_db_instance.this.master_user_secret[0].secret_arn, null)
 }

@@ -1,7 +1,15 @@
 # AZs are looked up from the region the provider is configured for, so
 # changing the region can never leave us pointing at AZs that don't exist.
 data "aws_availability_zones" "available" {
+  # checkov:skip=CKV_AWS_394:Only the first az_count zones are used (slice below), so a newly added AZ never changes the selection.
   state = "available"
+
+  # Regular AZs only - never Local Zones / Wavelength Zones, even if the
+  # account is opted in to them.
+  filter {
+    name   = "zone-type"
+    values = ["availability-zone"]
+  }
 }
 
 locals {
@@ -18,6 +26,7 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "aws_vpc" "this" {
+  # checkov:skip=CKV2_AWS_11:Flow logs bill for CloudWatch/S3 storage; out of scope for a cost-capped lab.
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
@@ -36,6 +45,7 @@ resource "aws_internet_gateway" "this" {
 # ---------------------------------------------------------------------------
 
 resource "aws_subnet" "public" {
+  # checkov:skip=CKV_AWS_130:Public subnets by design - the instance needs a public IP because there is no (paid) NAT Gateway.
   for_each = local.public_subnets
 
   vpc_id                  = aws_vpc.this.id
@@ -74,9 +84,10 @@ resource "aws_route_table_association" "public" {
 resource "aws_subnet" "private" {
   for_each = local.private_subnets
 
-  vpc_id            = aws_vpc.this.id
-  cidr_block        = each.value
-  availability_zone = each.key
+  vpc_id                  = aws_vpc.this.id
+  cidr_block              = each.value
+  availability_zone       = each.key
+  map_public_ip_on_launch = false
 
   tags = {
     Name = "${var.name}-private-${each.key}"
