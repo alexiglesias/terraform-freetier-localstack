@@ -1,121 +1,211 @@
 # terraform-freetier-localstack
 
-Learn Terraform against real AWS Free Tier infrastructure (EC2 t2.micro, S3, RDS micro) and against LocalStack for local, low/no-cost simulation once the Free Tier runs out. One codebase, two targets, switched by a single variable. Foundational groundwork before layering CI/CD on top of real infrastructure.
+[![CI](https://github.com/alexiglesias/terraform-freetier-localstack/actions/workflows/ci.yml/badge.svg)](https://github.com/alexiglesias/terraform-freetier-localstack/actions/workflows/ci.yml)
+![Terraform](https://img.shields.io/badge/Terraform-1.16-7B42BC?logo=terraform)
+![AWS provider](https://img.shields.io/badge/AWS%20provider-6.x-FF9900?logo=amazonaws)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## What this deploys
+A small but production-shaped AWS web stack in Terraform - VPC, EC2, ALB and
+RDS - built from reusable modules and deployed to **two targets from one
+codebase**: real AWS, and LocalStack for $0 local and CI testing.
 
-- A VPC with public and private subnets across 2 AZs, an Internet Gateway, and an optional NAT Gateway (off by default — it isn't Free Tier)
-- Security groups for a web tier, an ALB, and a database tier, each scoped to only the traffic it actually needs
-- An EC2 t2.micro instance running nginx, with a Terraform-generated SSH key pair
-- An RDS MySQL db.t3.micro instance in the private subnets *(real AWS only — see LocalStack caveats below)*
-- An Application Load Balancer in front of the EC2 instance *(real AWS only — see LocalStack caveats below)*
-- An AWS Budget alert that notifies on 80% and 100% of a small monthly ceiling, plus a forecasted-spend check *(real AWS only)*
-- An S3 + DynamoDB remote state backend, bootstrapped separately (`backend.tf.example` + `scripts/bootstrap-backend.sh`)
+The focus is on the *engineering around* the infrastructure: separate state
+per environment, a hardened remote backend, secure defaults, cost guard-rails,
+automated tests and a CI pipeline that deploys and destroys the stack on every
+pull request.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    user([Internet]) -->|HTTP :80| alb
+
+    subgraph vpc["VPC 10.20.0.0/16 - 2 Availability Zones"]
+        subgraph public["Public subnets"]
+            alb[Application<br/>Load Balancer]
+            ec2[EC2 t3.micro<br/>Ubuntu 24.04 + nginx]
+        end
+        subgraph private["Private subnets - no internet route"]
+            rds[(RDS MySQL 8.4<br/>db.t3.micro)]
+        end
+    end
+
+    alb -->|:80, ALB security group only| ec2
+    ec2 -->|:3306, EC2 security group only| rds
+    admin([You]) -.->|SSM Session Manager<br/>no open SSH port| ec2
+    rds -.->|generated password| sm[Secrets Manager]
+
+    subgraph bootstrap["bootstrap/ - created once, survives destroy"]
+        s3[(S3 state bucket<br/>versioned, encrypted)]
+        budget[AWS Budget alert]
+    end
+```
+
+Each security group only accepts traffic from the layer in front of it:
+internet -> ALB -> EC2 -> RDS. The database has no public IP and no route to
+the internet.
+
+## What this project demonstrates
+
+- **Reusable modules** (`network`, `compute`, `alb`, `database`), each owning its own security group
+- **Isolated environments** - `envs/aws` and `envs/localstack` are separate Terraform roots with separate state, so a LocalStack run can never touch real AWS state
+- **Remote state done properly** - S3 backend with native state locking (`use_lockfile`, no DynamoDB), versioning, encryption, TLS-only bucket policy, created by its own `bootstrap/` root
+- **Secure defaults** - no SSH (SSM Session Manager instead), IMDSv2 enforced, encrypted disks and database, RDS-generated password stored in Secrets Manager (never in code or state), least-privilege security groups, the VPC default security group stripped of all rules
+- **Guard-rails** - `allowed_account_ids` stops Terraform touching the wrong AWS account; input validation rejects things like SSH from `0.0.0.0/0`; a budget alert keeps watching even after `destroy`
+- **Testing** - 14 `terraform test` unit tests with mock providers, `tflint` (incl. AWS rules), `checkov` security + secret scanning, `shellcheck`
+- **CI/CD** - GitHub Actions runs every check on each PR, then deploys the stack to LocalStack, verifies a second apply is a no-op (idempotency), and destroys it. `main` is protected: nothing merges without green CI
+- **Safe workflow** - one `make` entry point; you confirm *after* seeing the plan and Terraform applies exactly that saved plan
 
 ## Two targets, one codebase
 
-Every resource is written once and toggled by `var.use_localstack`, plus `var.create_rds` / `var.create_alb`:
-
-| | Real AWS (`environments/aws.tfvars`) | LocalStack (`environments/localstack.tfvars`) |
+| | `envs/aws` - real AWS | `envs/localstack` - LocalStack |
 |---|---|---|
-| VPC, subnets, routing | ✅ | ✅ |
-| Security groups | ✅ | ✅ |
-| EC2 + key pair | ✅ | ⚠️ see caveat below |
-| RDS | ✅ | ❌ off (`create_rds = false`) |
-| ALB | ✅ | ❌ off (`create_alb = false`) |
-| Budget alert | ✅ | ❌ (not applicable) |
-| Cost | Free Tier limits, 12 months | Free/paid LocalStack plan, see caveat |
+| VPC, subnets, routing, security groups | yes | yes |
+| EC2 + SSM role | yes | yes (EC2 emulated, no SSM) |
+| Application Load Balancer | yes (`create_alb`) | - not in the free LocalStack plan |
+| RDS MySQL | yes (`create_rds`) | - not in the free LocalStack plan |
+| State | S3 backend (`bootstrap/`) | local file |
+| Cost | ~$0.07/hour while deployed | $0 |
+| Verified by | validate, tflint, checkov and unit tests in CI; `make plan ENV=aws` previews it for free | CI: apply -> no-op apply -> destroy on every PR |
 
-## Important — read before you start
-
-**LocalStack changed its pricing in 2026.** The old open-source Community Edition (anonymous, no signup, `docker pull` and go) was discontinued on **March 23, 2026**. The current free option is a "Free" plan that requires a LocalStack account and an auth token. Which AWS services are actually included in that free plan has shifted, and sources disagree on exactly where EC2 currently sits — RDS and ALB are confidently Pro/paid-tier features, which is why `create_rds` and `create_alb` default to `false` for the LocalStack path in this project.
-
-**Before running anything against LocalStack:**
-1. Sign up at https://app.localstack.cloud and get an auth token.
-2. Check the current feature matrix yourself: https://docs.localstack.cloud/aws/capabilities/support/feature-coverage/ and https://docs.localstack.cloud/aws/licensing/ — this project's assumptions may be stale by the time you read this.
-3. `export LOCALSTACK_AUTH_TOKEN="your-token-here"` before running `scripts/localstack-up.sh`.
-
-**Before running anything against real AWS:**
-1. Set `allowed_ssh_cidr` in `environments/aws.tfvars` to your own IP, not `0.0.0.0/0`.
-2. Set `budget_alert_email` in `environments/aws.tfvars` — an alert nobody receives is not an alert.
-3. Export a real database password: `export TF_VAR_db_password='something-strong'`. Never commit it.
-4. Understand that the AWS Budget alert **notifies**, it does not **stop** spend. There is no "hard cap" API on AWS. Run `scripts/destroy.sh aws` when you're done for the day.
-
-## Project structure
+## Repository layout
 
 ```
-terraform-freetier-localstack/
-├── versions.tf                  # Terraform + provider version constraints
-├── .terraform-version           # tfenv pin
-├── providers.tf                 # single AWS provider, toggled for LocalStack
-├── variables.tf                 # every input, with defaults and doc strings
-├── outputs.tf
-├── vpc.tf                       # VPC, subnets, IGW, optional NAT, route tables
-├── security_groups.tf           # ALB / EC2 / RDS security groups
-├── keypair.tf                   # generates and saves an SSH key pair
-├── ec2.tf                       # EC2 instance + Ubuntu AMI lookup
-├── rds.tf                       # RDS MySQL (create_rds toggle)
-├── alb.tf                       # ALB + target group + listener (create_alb toggle)
-├── budget.tf                    # AWS Budget cost-guard (real AWS only)
-├── backend.tf.example           # copy to backend.tf after bootstrapping
-├── environments/
-│   ├── aws.tfvars               # real AWS Free Tier settings
-│   └── localstack.tfvars        # LocalStack settings (RDS/ALB off)
-└── scripts/
-    ├── bootstrap-backend.sh     # one-time: create the S3+DynamoDB backend
-    ├── localstack-up.sh         # start LocalStack in Docker
-    ├── deploy.sh                # terraform init/plan/apply wrapper
-    └── destroy.sh                # terraform destroy wrapper, with a checklist
+.
+├── bootstrap/            # run once: S3 state bucket + budget alert (local state)
+├── modules/
+│   ├── network/          # VPC, public/private subnets per AZ, IGW, optional NAT
+│   ├── compute/          # EC2, AMI lookup, SSM role, optional SSH, security group
+│   ├── alb/              # load balancer, target group, ALB -> EC2 rule
+│   └── database/         # RDS MySQL, subnet group, EC2 -> RDS rule
+│       └── tests/        # each module has terraform test files
+├── envs/
+│   ├── aws/              # real AWS root (S3 backend)
+│   └── localstack/       # LocalStack root (local state)
+├── scripts/
+│   ├── tf.sh             # plan/apply/destroy with confirmation + account guard
+│   ├── localstack-up.sh  # start LocalStack and wait until healthy
+│   └── cleanup-aws.sh    # emergency: remove anything billable, even without state
+├── docker-compose.yml    # pinned LocalStack image
+├── Makefile              # the front door - run `make` to see every target
+└── .github/workflows/    # CI
 ```
 
-## Prerequisites
+## Quick start - LocalStack ($0)
 
-- Terraform (version pinned in `.terraform-version` — use `tfenv install` if you use `tfenv`)
-- AWS CLI configured (`aws configure`) for the real-AWS path
-- Docker, for the LocalStack path
-- A LocalStack account + auth token (see the pricing note above) for the LocalStack path
-
-## Usage — real AWS
+Needs: Terraform 1.16 (see `.terraform-version`), Docker, and a free
+[LocalStack](https://app.localstack.cloud) Hobby account for the auth token.
 
 ```bash
-# One-time: set up remote state
-./scripts/bootstrap-backend.sh my-unique-bucket-name my-lock-table-name us-east-1
-cp backend.tf.example backend.tf
-# edit backend.tf with the bucket/table names printed above
-terraform init
-
-# Set required secrets
-export TF_VAR_db_password='something-strong'
-
-# Edit environments/aws.tfvars: allowed_ssh_cidr, budget_alert_email
-
-./scripts/deploy.sh aws
-terraform output
-
-# When you're done for the session:
-./scripts/destroy.sh aws
+cp .env.example .env          # paste your LOCALSTACK_AUTH_TOKEN into .env
+make apply                    # starts LocalStack, shows the plan, asks, applies
+make output
+make destroy
+make down                     # stop LocalStack
 ```
 
-## Usage — LocalStack
+`ENV` defaults to `localstack`, so a plain `make apply` can never reach real AWS.
+
+## Real AWS
+
+Uses short-lived credentials from IAM Identity Center (SSO) - no long-lived
+access keys.
 
 ```bash
-export LOCALSTACK_AUTH_TOKEN="your-token-here"
-./scripts/deploy.sh localstack
-terraform output
+aws sso login --profile <your-profile> && export AWS_PROFILE=<your-profile>
 
-./scripts/destroy.sh localstack
+# 1. Once: state bucket + budget alert (~$0/month)
+cp bootstrap/terraform.tfvars.example bootstrap/terraform.tfvars   # account id + email
+terraform -chdir=bootstrap init && terraform -chdir=bootstrap apply
+
+# 2. Configure the environment
+cp envs/aws/terraform.tfvars.example envs/aws/terraform.tfvars     # account id
+
+# 3. Free, read-only: see exactly what would be created
+make plan ENV=aws
+
+# 4. Costs money while it runs - destroy when done
+make apply ENV=aws
+make destroy ENV=aws
 ```
 
-Local state is used for the LocalStack path (no S3 backend) since LocalStack's own state resets on container restart anyway, a remote backend buys nothing there.
+## Make targets
 
-## Cost safety checklist
+| Target | What it does | Cost |
+|---|---|---|
+| `make plan [ENV=aws]` | Show what would change; changes nothing | $0 |
+| `make apply [ENV=aws]` | Plan -> confirm -> apply that exact plan | LocalStack $0 / AWS ~$0.07/h |
+| `make destroy [ENV=aws]` | Plan destroy -> confirm -> apply | $0 |
+| `make output [ENV=aws]` | Show outputs (URL, SSM command, ...) | $0 |
+| `make up` / `make down` | Start / stop LocalStack | $0 |
+| `make check` | `fmt` + `validate` on every root | $0 |
+| `make lint` | tflint with AWS rules | $0 |
+| `make security` | checkov security + secrets scan | $0 |
+| `make test` | 14 module unit tests (mock providers, offline) | $0 |
+| `make ci` | Everything CI runs | $0 |
+| `make cleanup` | Emergency: remove everything billable this project left in AWS | $0 |
 
-- [ ] `allowed_ssh_cidr` is your IP, not the world
-- [ ] `budget_alert_email` is set and you can actually receive that email
-- [ ] `enable_nat_gateway` stays `false` unless you specifically need it (NAT Gateways are billed per hour + per GB, Free Tier does not cover them)
-- [ ] You ran `./scripts/destroy.sh aws` at the end of the session
-- [ ] You checked the AWS Billing console directly at least once, budget alerts are a notification, not a guarantee
+## Quality gates
 
-## Status
+| Where | What runs |
+|---|---|
+| Every `git commit` (pre-commit) | fmt, validate, tflint, shellcheck, private-key / AWS-key detection |
+| Every pull request (GitHub Actions) | all of the above + 14 unit tests + checkov, then LocalStack apply -> no-op apply -> destroy |
+| `main` branch | protected - changes only via PR with green CI |
+| Weekly (Dependabot) | PRs for new GitHub Actions and provider versions, tested by CI |
 
-This is an active learning project, not a finished, battle-tested module. No CI is wired up yet — correctness is checked with `terraform validate` / `terraform plan` and manual review. Treat the LocalStack service-coverage assumptions in this README as a starting point to verify, not a fact to trust blindly, since LocalStack's own packaging has changed more than once recently.
+### Security scan exceptions
+
+checkov reports **0 failed checks**. A few checks are deliberately skipped,
+each with its reason written inline next to the resource
+(`# checkov:skip=<ID>:<reason>`), never in a global ignore list. They fall
+into three groups:
+
+- **Would cost money** in a cost-capped lab - WAF, Multi-AZ RDS, VPC flow logs, enhanced monitoring, a customer-managed KMS key, cross-region replication
+- **Need a domain name** - HTTPS listener and HTTP -> HTTPS redirect (no domain in this lab)
+- **Would block `make destroy`** - deletion protection on the ALB and RDS
+
+## Cost and safety
+
+Real AWS is opt-in, and every billable step is guarded:
+
+| Running in AWS | Approx. cost (us-east-1) |
+|---|---|
+| EC2 t3.micro | $0.010 / h |
+| RDS db.t3.micro + 20 GB gp3 | $0.020 / h |
+| Application Load Balancer | $0.023 / h + usage |
+| 3 public IPv4 addresses | $0.015 / h |
+| **Whole stack** | **~$0.07 / h (~$1.60 / day)** |
+| `bootstrap/` (state bucket + budget) | ~$0 / month |
+
+- `make apply ENV=aws` prints the running cost and reminds you to destroy
+- An AWS Budget emails at 80% and 100% of a monthly limit, and on the forecast
+- `make cleanup` finds and removes billable leftovers by tag, even if Terraform state is lost
+- MySQL 8.4 with Extended Support auto-enrolment disabled, so the database can never silently start billing for an out-of-support version
+- t3.micro is Free Tier eligible for both pre- and post-July-2025 AWS accounts
+
+## Verification
+
+- **LocalStack** - deployed, re-applied (no changes) and destroyed by CI on every pull request; see the [Actions tab](https://github.com/alexiglesias/terraform-freetier-localstack/actions)
+- **Real AWS** - the `bootstrap/` stack (state bucket + budget alert) runs in a real account. The full `envs/aws` stack is not left deployed, to keep the lab at $0: it is validated, linted, security-scanned and unit-tested on every PR, and `make plan ENV=aws` shows exactly what it would create without creating anything
+- **Modules** - 14 unit tests assert the secure defaults and that bad input is rejected (e.g. MySQL 8.0, SSH from anywhere, a single-AZ ALB)
+
+## Design decisions
+
+- **Separate roots instead of workspaces** - each environment has its own backend and provider config, so it's impossible to point LocalStack at the AWS state by accident
+- **EC2 in a public subnet** - a NAT Gateway (~$32/month) would be needed for a private instance; the module supports it (`enable_nat_gateway`) but it's off by default
+- **Security group rules as separate resources** - lets the ALB module add its own rule to the instance's security group, so that rule exists only when the ALB does
+- **SSM instead of SSH** - no open port and no key to leak; SSH can still be enabled for a single `/32`
+- **Mock EC2 in LocalStack (`EC2_VM_MANAGER=mock`)** - fast and deterministic for CI; switch to `docker` to run real containers
+
+## Possible next steps
+
+- HTTPS with a domain, ACM certificate and HTTP -> HTTPS redirect
+- `terraform plan` against real AWS in CI via GitHub OIDC (no stored credentials)
+- Auto Scaling Group behind the ALB instead of a single instance
+
+## License
+
+[MIT](LICENSE)
