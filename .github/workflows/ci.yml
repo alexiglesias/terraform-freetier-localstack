@@ -135,8 +135,19 @@ jobs:
       - name: Outputs
         run: make output ENV=localstack
 
-      - name: Second apply must be a no-op (idempotency)
-        run: make apply ENV=localstack
+      - name: Second apply must show no changes (idempotency)
+        run: |
+          set +e
+          terraform -chdir=envs/localstack plan -detailed-exitcode -input=false -lock=false -no-color
+          code=$?
+          set -e
+          case "$code" in
+            0) echo "No changes after apply - the configuration is idempotent." ;;
+            2) echo "::error::terraform plan shows changes right after apply - the configuration is not idempotent."
+               exit 1 ;;
+            *) echo "::error::terraform plan failed (exit code $code)."
+               exit "$code" ;;
+          esac
 
       - name: terraform destroy
         run: make destroy ENV=localstack
